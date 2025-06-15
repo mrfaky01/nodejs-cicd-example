@@ -1,77 +1,131 @@
 // Jenkinsfile
 // This file defines your CI/CD pipeline using Jenkins Pipeline (Declarative Pipeline syntax).
 
-// *** CRITICAL FIX: The entire pipeline must be wrapped in a 'pipeline { ... }' block. ***
 pipeline {
-    // Define the agent where the pipeline will run.
-    // 'any' means Jenkins will use any available agent, including the built-in master if no agents are configured.
-    // For production, you should use 'agent { label 'your-agent-label' }' to use dedicated build agents.
     agent any
 
-    // Define environment variables that will be used throughout the pipeline.
     environment {
         // ECR_REPO_URI: The URI of your AWS ECR repository.
-        // Replace "893437914041.dkr.ecr.eu-north-1.amazonaws.com/nodejs-cicd-example" with your actual ECR URI.
+        // Replace with your actual ECR URI from terraform apply output.
         ECR_REPO_URI = "893437914041.dkr.ecr.eu-north-1.amazonaws.com/nodejs-cicd-example"
         // AWS_REGION: Your AWS region.
         AWS_REGION = "eu-north-1"
         // IMAGE_TAG: The tag for your Docker image. We'll use the build number for uniqueness.
         IMAGE_TAG = "build-${BUILD_NUMBER}"
+        // DEPLOYMENT_SERVER_PRIVATE_IP: The private IP of your deployment EC2 instance.
+        // Replace with your actual private IP from terraform apply output.
+        DEPLOYMENT_SERVER_PRIVATE_IP = "10.0.11.63"
+        // DEPLOYMENT_SSH_CREDENTIALS_ID: The ID of the SSH credential configured in Jenkins.
+        DEPLOYMENT_SSH_CREDENTIALS_ID = "deployment-server-ssh-key"
     }
 
-    // Define the stages of your pipeline.
     stages {
-        // Stage 1: Checkout - Get the source code from GitHub.
         stage('Checkout') {
             steps {
-                // Cleans up the workspace before starting, good practice for fresh builds.
                 cleanWs()
-                // Checks out the code from the SCM (Source Code Management, i.e., your GitHub repo).
-                // Jenkins automatically handles cloning the repo defined in the job configuration.
                 checkout scm
             }
         }
 
-        // Stage 2: Build Docker Image - Create the Docker image from your Dockerfile.
+        // New Stage: Test
+        stage('Test') {
+            steps {
+                script {
+                    sh "npm install" // Install app dependencies on the Jenkins agent for testing
+                    sh "npm test"    // Run your unit tests (placeholder for now)
+                    echo "Application tests passed!"
+                }
+            }
+        }
+
         stage('Build Docker Image') {
             steps {
                 script {
-                    // Build the Docker image.
-                    // -t: Tag the image with the repository URI and a unique tag.
-                    // .: Build context is the current directory (where Dockerfile is).
                     sh "docker build -t ${ECR_REPO_URI}:${IMAGE_TAG} ."
                     sh "echo 'Docker image built: ${ECR_REPO_URI}:${IMAGE_TAG}'"
                 }
             }
         }
 
-        // Stage 3: Authenticate with ECR - Get Docker login credentials for ECR.
         stage('Authenticate with ECR') {
             steps {
                 script {
-                    // Get ECR login command.
-                    // The IAM role attached to the Jenkins EC2 instance grants permission for this.
                     def loginCommand = sh(script: "aws ecr get-login-password --region ${AWS_REGION}", returnStdout: true).trim()
-                    // Use the login command to authenticate Docker.
-                    // 'docker login' requires the password via stdin for security.
                     sh "echo ${loginCommand} | docker login --username AWS --password-stdin ${ECR_REPO_URI.split('/')[0]}"
                     sh "echo 'Authenticated with ECR.'"
                 }
             }
         }
 
-        // Stage 4: Push Docker Image to ECR - Upload the built image to your ECR repository.
         stage('Push Docker Image to ECR') {
             steps {
                 script {
-                    // Push the Docker image to ECR with its tag.
                     sh "docker push ${ECR_REPO_URI}:${IMAGE_TAG}"
                     sh "echo 'Docker image pushed to ECR: ${ECR_REPO_URI}:${IMAGE_TAG}'"
                 }
             }
         }
 
-        // Stage 5: Cleanup - Remove local Docker image to free up space.
+        // New Stage: Deploy to EC2
+        stage('Deploy to EC2') {
+            steps {
+                script {
+                    // Use withCredentials to expose the SSH key securely
+                    withCredentials([sshUserPrivateKey(credentialsId: "${DEPLOYMENT_SSH_CREDENTIALS_ID}", keyFileVariable: 'SSH_KEY_FILE')]) {
+                        // Define the command to be executed on the remote server
+                        // This command will:
+                        // 1. Get the latest ECR login password.
+                        // 2. Log in to ECR on the deployment server.
+                        // 3. Stop and remove any running container for this app.
+                        // 4. Pull the newly built Docker image from ECR.
+                        // 5. Run the new Docker container, mapping port 3000.
+                        def remoteCommands = """
+                            #!/bin/bash
+                            set -e # Exit immediately if a command exits with a non-zero status
+
+                            # Get ECR login credentials on the deployment server
+                            aws configure set default.region ${AWS_REGION}
+                            login_output=\$(aws ecr get-login-password --region ${AWS_REGION})
+                            echo \$login_output | docker login --username AWS --password-stdin ${ECR_REPO_URI.split('/')[0]}
+                            echo "Successfully logged into ECR on deployment server."
+
+                            # Stop and remove existing container if running
+                            CONTAINER_NAME="nodejs-cicd-example-app"
+                            if docker ps -q -f name=\$CONTAINER_NAME | grep -q .; then
+                                echo "Stopping existing container \$CONTAINER_NAME..."
+                                docker stop \$CONTAINER_NAME
+                                docker rm \$CONTAINER_NAME
+                                echo "Existing container stopped and removed."
+                            else
+                                echo "No existing container \$CONTAINER_NAME to stop/remove."
+                            fi
+
+                            # Pull the latest image
+                            echo "Pulling image ${ECR_REPO_URI}:${IMAGE_TAG}..."
+                            docker pull ${ECR_REPO_URI}:${IMAGE_TAG}
+                            echo "Image pulled."
+
+                            # Run the new container
+                            echo "Starting new container \$CONTAINER_NAME from image ${ECR_REPO_URI}:${IMAGE_TAG}..."
+                            docker run -d --name \$CONTAINER_NAME -p 80:3000 ${ECR_REPO_URI}:${IMAGE_TAG}
+                            echo "Container \$CONTAINER_NAME started successfully on port 80."
+
+                            # Clean up old images to save disk space
+                            echo "Cleaning up old Docker images on deployment server..."
+                            docker system prune -f
+                            docker image prune -f
+                            echo "Old Docker images pruned."
+                        """
+
+                        // Execute the commands on the remote deployment server via SSH
+                        // The `sshCommand` step requires the SSH_KEY_FILE variable from withCredentials
+                        sshCommand remote: "${DEPLOYMENT_SERVER_PRIVATE_IP}", credentials: "${DEPLOYMENT_SSH_CREDENTIALS_ID}", command: remoteCommands
+                    }
+                    echo "Application deployed to ${DEPLOYMENT_SERVER_PRIVATE_IP}!"
+                }
+            }
+        }
+
         stage('Cleanup') {
             steps {
                 script {
@@ -82,19 +136,15 @@ pipeline {
         }
     }
 
-    // Define actions to take after the entire pipeline finishes.
     post {
-        // Always run this block, regardless of success or failure.
         always {
             echo "Pipeline finished for ${ECR_REPO_URI}:${IMAGE_TAG}"
         }
-        // Only run if the pipeline succeeded.
         success {
-            echo "Pipeline completed successfully! Image pushed to ECR."
+            echo "Pipeline completed successfully! Image pushed to ECR and deployed."
         }
-        // Only run if the pipeline failed.
         failure {
             echo "Pipeline failed. Check logs for details."
         }
     }
-} // End of pipeline block
+}
