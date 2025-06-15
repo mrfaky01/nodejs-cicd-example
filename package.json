@@ -1,0 +1,15 @@
+{
+  "name": "nodejs-cicd-example",
+  "version": "1.0.0",
+  "description": "A Node.js example app for Jenkins CI/CD pipeline.",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "test": "echo \"No tests specified for nodejs-cicd-example\" && exit 0"
+  },
+  "author": "Your Name",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.17.1"
+  }
+}
