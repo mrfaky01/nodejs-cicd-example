@@ -82,12 +82,6 @@ pipeline {
                     // Use withCredentials to expose the SSH key securely
                     withCredentials([sshUserPrivateKey(credentialsId: "${DEPLOYMENT_SSH_CREDENTIALS_ID}", keyFileVariable: 'SSH_KEY_FILE')]) {
                         // Define the command to be executed on the remote server
-                        // This command will:
-                        // 1. Get the latest ECR login password.
-                        // 2. Log in to ECR on the deployment server.
-                        // 3. Stop and remove any running container for this app.
-                        // 4. Pull the newly built Docker image from ECR.
-                        // 5. Run the new Docker container, mapping port 3000.
                         def remoteCommands = """
                             #!/bin/bash
                             set -e # Exit immediately if a command exits with a non-zero status
@@ -127,8 +121,11 @@ pipeline {
                         """
 
                         // Execute the commands on the remote deployment server via SSH
-                        // The `sshCommand` step requires the SSH_KEY_FILE variable from withCredentials
-                        sshCommand remote: "${DEPLOYMENT_SERVER_PRIVATE_IP}", credentials: "${DEPLOYMENT_SSH_CREDENTIALS_ID}", command: remoteCommands
+                        // Corrected sshCommand syntax
+                        sshCommand(
+                            remote: [host: "${DEPLOYMENT_SERVER_PRIVATE_IP}", username: "ec2-user", credentialsId: "${DEPLOYMENT_SSH_CREDENTIALS_ID}"], // Pass credentials via remote map
+                            command: remoteCommands
+                        )
                     }
                     echo "Application deployed to ${DEPLOYMENT_SERVER_PRIVATE_IP}!"
                 }
