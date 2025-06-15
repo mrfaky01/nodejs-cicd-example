@@ -124,9 +124,10 @@ pipeline {
                         sshCommand(
                             remote: [
                                 host: "${DEPLOYMENT_SERVER_PRIVATE_IP}",
-                                user: "ec2-user", // <-- CHANGED from 'username' to 'user'
+                                user: "ec2-user",
                                 credentialsId: "${DEPLOYMENT_SSH_CREDENTIALS_ID}",
-                                name: "deployment-server"
+                                name: "deployment-server",
+                                allowAnyHosts: true // <-- NEW: Add this line to bypass known_hosts check
                             ],
                             command: remoteCommands
                         )
