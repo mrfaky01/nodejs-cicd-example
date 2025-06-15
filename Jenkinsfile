@@ -121,9 +121,13 @@ pipeline {
                         """
 
                         // Execute the commands on the remote deployment server via SSH
-                        // Corrected sshCommand syntax
                         sshCommand(
-                            remote: [host: "${DEPLOYMENT_SERVER_PRIVATE_IP}", username: "ec2-user", credentialsId: "${DEPLOYMENT_SSH_CREDENTIALS_ID}"], // Pass credentials via remote map
+                            remote: [
+                                host: "${DEPLOYMENT_SERVER_PRIVATE_IP}",
+                                username: "ec2-user",
+                                credentialsId: "${DEPLOYMENT_SSH_CREDENTIALS_ID}",
+                                name: "deployment-server" // <-- NEW: Add a logical name for the remote connection
+                            ],
                             command: remoteCommands
                         )
                     }
