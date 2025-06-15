@@ -31,10 +31,14 @@ pipeline {
         stage('Test') {
             steps {
                 script {
-                    // Install Node.js 16 and npm on the Jenkins agent
-                    // Amazon Linux 2 uses amazon-linux-extras to manage software collections
-                    sh "sudo amazon-linux-extras install -y nodejs16" // <-- CHANGED from 'nodejs' to 'nodejs16'
-                    sh "echo 'Node.js 16 and npm installed on Jenkins agent.'"
+                    // Install Node.js 16 and npm on the Jenkins agent using NodeSource repository
+                    // This is a more robust method if amazon-linux-extras topics are problematic.
+                    sh """
+                        echo "Installing Node.js 16 and npm on Jenkins agent using NodeSource..."
+                        curl -fsSL https://rpm.nodesource.com/setup_16.x | sudo bash -
+                        sudo yum install -y nodejs
+                        echo "Node.js and npm installed on Jenkins agent."
+                    """
 
                     sh "npm install" // Install app dependencies on the Jenkins agent for testing
                     sh "npm test"    // Run your unit tests (placeholder for now)
