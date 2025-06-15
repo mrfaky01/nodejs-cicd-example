@@ -79,9 +79,12 @@ pipeline {
         stage('Deploy to EC2') {
             steps {
                 script {
-                    // Use withCredentials to expose the SSH key securely
+                    // Use withCredentials to expose the SSH key securely as a temporary file
                     withCredentials([sshUserPrivateKey(credentialsId: "${DEPLOYMENT_SSH_CREDENTIALS_ID}", keyFileVariable: 'SSH_KEY_FILE')]) {
-                        // Define the command to be executed on the remote server
+                        // Construct the full SSH command including the key file and host key checking bypass
+                        def sshCommandString = "ssh -o StrictHostKeyChecking=no -i ${SSH_KEY_FILE} ec2-user@${DEPLOYMENT_SERVER_PRIVATE_IP}"
+
+                        // Define the remote commands to be executed on the deployment server
                         def remoteCommands = """
                             #!/bin/bash
                             set -e # Exit immediately if a command exits with a non-zero status
@@ -120,21 +123,10 @@ pipeline {
                             echo "Old Docker images pruned."
                         """
 
-                        // Execute the commands on the remote deployment server via SSH
-                        sshCommand(
-                            remote: [
-                                host: "${DEPLOYMENT_SERVER_PRIVATE_IP}",
-                                user: "ec2-user",
-                                name: "deployment-server",
-                                allowAnyHosts: true,
-                                strictHostKeyChecking: 'no', // <-- NEW: Explicitly disable strict host key checking
-                                knownHosts: ''               // <-- NEW: Provide an empty known_hosts string
-                            ],
-                            keyFile: SSH_KEY_FILE,
-                            command: remoteCommands
-                        )
+                        // Execute the combined SSH and remote commands using a single 'sh' step
+                        sh "${sshCommandString} '${remoteCommands}'"
                     }
-                    echo "Application deployed to ${DEPLOYMENT_SERVER_PRIVATE_IP}!"
+                    echo "Application deployment script sent to ${DEPLOYMENT_SERVER_PRIVATE_IP}!"
                 }
             }
         }
