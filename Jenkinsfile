@@ -125,10 +125,12 @@ pipeline {
                             remote: [
                                 host: "${DEPLOYMENT_SERVER_PRIVATE_IP}",
                                 user: "ec2-user",
-                                credentialsId: "${DEPLOYMENT_SSH_CREDENTIALS_ID}",
                                 name: "deployment-server",
-                                allowAnyHosts: true // <-- NEW: Add this line to bypass known_hosts check
+                                allowAnyHosts: true,
+                                strictHostKeyChecking: 'no', // <-- NEW: Explicitly disable strict host key checking
+                                knownHosts: ''               // <-- NEW: Provide an empty known_hosts string
                             ],
+                            keyFile: SSH_KEY_FILE,
                             command: remoteCommands
                         )
                     }
