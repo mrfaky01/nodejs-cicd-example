@@ -124,9 +124,9 @@ pipeline {
                         sshCommand(
                             remote: [
                                 host: "${DEPLOYMENT_SERVER_PRIVATE_IP}",
-                                username: "ec2-user",
+                                user: "ec2-user", // <-- CHANGED from 'username' to 'user'
                                 credentialsId: "${DEPLOYMENT_SSH_CREDENTIALS_ID}",
-                                name: "deployment-server" // <-- NEW: Add a logical name for the remote connection
+                                name: "deployment-server"
                             ],
                             command: remoteCommands
                         )
